@@ -5,8 +5,8 @@ nav:
 - Advanced Configuration: Advanced-Configuration.md
 - Developer Guide: Developer-Guide.md
 
-repo_name: sql-ds-cache
-repo_url: https://github.com/oap-project/sql-ds-cache.git
+repo_name: 'Fork on GitHub '
+repo_url: 'https://github.com/oap-project/sql-ds-cache.git'
 edit_uri: ""
 
 theme: readthedocs
