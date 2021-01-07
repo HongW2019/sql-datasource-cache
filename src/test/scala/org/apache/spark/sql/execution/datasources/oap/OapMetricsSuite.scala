@@ -112,10 +112,10 @@ class OapMetricsSuite extends QueryTest with SharedOapContext with BeforeAndAfte
 
   def buildParquetData(rowNum: Int = 100): Unit = buildData("parquet_test", rowNum)
 
-  def buildOrcData(rowNum: Int = 100): Unit = buildData("orc_test", rowNum)
+  def buildOapData(rowNum: Int = 100): Unit = buildData("orc_test", rowNum)
 
-  ignore("test OAP accumulator on OrcFileFormat") {
-    buildOrcData()
+  ignore("test OAP accumulator on OapFileFormat") {
+    buildOapData()
     sql("create oindex idx1 on orc_test (a)")
 
     // SQL 1: skipped task for statistic, OapFileFormat
@@ -194,8 +194,8 @@ class OapMetricsSuite extends QueryTest with SharedOapContext with BeforeAndAfte
     sqlContext.conf.setConfString(OapConf.OAP_EXECUTOR_INDEX_SELECTION_FILE_POLICY.key, "false")
   }
 
-  ignore("test OAP accumulators on Orc when miss index") {
-    buildOrcData(99)
+  ignore("test OAP accumulators on Oap when miss index") {
+    buildOapData(99)
 
     // SQL 5: miss index
     val df = sql("SELECT * FROM orc_test where a = 1")

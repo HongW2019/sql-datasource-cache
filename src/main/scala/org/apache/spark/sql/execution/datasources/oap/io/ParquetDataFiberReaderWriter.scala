@@ -42,6 +42,7 @@ import org.apache.spark.unsafe.Platform
  */
 object ParquetDataFiberWriter extends Logging {
 
+  // parquet dumpToCache
   def dumpToCache(column: OapOnHeapColumnVector, total: Int, fiberId: FiberId = null,
                   path: String = null, mc: ColumnChunkMetaData = null): FiberCache = {
     val header = ParquetDataFiberHeader(column, total)

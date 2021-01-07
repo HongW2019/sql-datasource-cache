@@ -17,7 +17,6 @@
  */
 package org.apache.orc.impl;
 
-import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.orc.CompressionKind;
 
 import java.io.IOException;
@@ -53,17 +52,17 @@ import org.apache.orc.TypeDescription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.common.io.DiskRange;
-import org.apache.hadoop.hive.common.io.DiskRangeList;
-import org.apache.hadoop.hive.common.io.DiskRangeList.CreateHelper;
-import org.apache.hadoop.hive.common.type.HiveDecimal;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
-import org.apache.hadoop.hive.ql.io.sarg.PredicateLeaf;
-import org.apache.hadoop.hive.ql.io.sarg.SearchArgument;
-import org.apache.hadoop.hive.ql.io.sarg.SearchArgument.TruthValue;
-import org.apache.hadoop.hive.serde2.io.DateWritable;
-import org.apache.hadoop.hive.serde2.io.HiveDecimalWritable;
-import org.apache.hadoop.hive.ql.util.TimestampUtils;
+import org.apache.orc.storage.common.io.DiskRange;
+import org.apache.orc.storage.common.io.DiskRangeList;
+import org.apache.orc.storage.common.io.DiskRangeList.CreateHelper;
+import org.apache.orc.storage.common.type.HiveDecimal;
+import org.apache.orc.storage.ql.exec.vector.VectorizedRowBatch;
+import org.apache.orc.storage.ql.io.sarg.PredicateLeaf;
+import org.apache.orc.storage.ql.io.sarg.SearchArgument;
+import org.apache.orc.storage.ql.io.sarg.SearchArgument.TruthValue;
+import org.apache.orc.storage.serde2.io.DateWritable;
+import org.apache.orc.storage.serde2.io.HiveDecimalWritable;
+import org.apache.orc.storage.ql.util.TimestampUtils;
 import org.apache.hadoop.io.Text;
 
 public class RecordReaderImpl implements RecordReader {
@@ -215,9 +214,7 @@ public class RecordReaderImpl implements RecordReader {
           rowIndexStride,
           evolution,
           writerVersion,
-          fileReader.useUTCTimestamp,
-          fileReader.writerUsedProlepticGregorian(),
-          fileReader.options.getConvertToProlepticGregorian());
+          fileReader.useUTCTimestamp);
     } else {
       sargApp = null;
     }
@@ -243,21 +240,16 @@ public class RecordReaderImpl implements RecordReader {
     if (options.getDataReader() != null) {
       this.dataReader = options.getDataReader().clone();
     } else {
-      DataReaderProperties.Builder builder =
+      this.dataReader = RecordReaderUtils.createDefaultDataReader(
           DataReaderProperties.builder()
               .withBufferSize(bufferSize)
               .withCompression(fileReader.compressionKind)
-              .withFileSystemSupplier(fileReader.getFileSystemSupplier())
+              .withFileSystem(fileReader.getFileSystem())
               .withPath(fileReader.path)
               .withTypeCount(types.size())
+              .withZeroCopy(zeroCopy)
               .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-              .withZeroCopy(zeroCopy);
-      FSDataInputStream file = fileReader.takeFile();
-      if (file != null) {
-        builder.withFile(file);
-      }
-      this.dataReader = RecordReaderUtils.createDefaultDataReader(
-          builder.build());
+              .build());
     }
     firstRow = skippedRows;
     totalRowCount = rows;
@@ -271,9 +263,7 @@ public class RecordReaderImpl implements RecordReader {
           .setSchemaEvolution(evolution)
           .skipCorrupt(skipCorrupt)
           .fileFormat(fileReader.getFileVersion())
-          .useUTCTimestamp(fileReader.useUTCTimestamp)
-          .setProlepticGregorian(fileReader.writerUsedProlepticGregorian(),
-                                 fileReader.options.getConvertToProlepticGregorian());
+          .useUTCTimestamp(fileReader.useUTCTimestamp);
     reader = TreeReaderFactory.createTreeReader(evolution.getReaderSchema(),
         readerContext);
 
@@ -307,13 +297,6 @@ public class RecordReaderImpl implements RecordReader {
     @Override
     public long getNext() {
       return entry.getPositions(index++);
-    }
-  }
-
-  public static final class ZeroPositionProvider implements PositionProvider {
-    @Override
-    public long getNext() {
-      return 0;
     }
   }
 
@@ -462,9 +445,9 @@ public class RecordReaderImpl implements RecordReader {
                                            OrcProto.ColumnEncoding encoding,
                                            OrcProto.BloomFilter bloomFilter,
                                            OrcFile.WriterVersion writerVersion,
-                                           TypeDescription type) {
+                                           TypeDescription.Category type) {
     return evaluatePredicateProto(statsProto, predicate, kind, encoding, bloomFilter,
-        writerVersion, type, false, false, false);
+        writerVersion, type, false);
   }
 
   /**
@@ -487,18 +470,14 @@ public class RecordReaderImpl implements RecordReader {
                                            OrcProto.ColumnEncoding encoding,
                                            OrcProto.BloomFilter bloomFilter,
                                            OrcFile.WriterVersion writerVersion,
-                                           TypeDescription type,
-                                           boolean useUTCTimestamp,
-                                           boolean writerUsedProlepticGregorian,
-                                           boolean convertToProlepticGregorian) {
-    ColumnStatistics cs = ColumnStatisticsImpl.deserialize(
-        null, statsProto, writerUsedProlepticGregorian, convertToProlepticGregorian);
+                                           TypeDescription.Category type,
+                                           boolean useUTCTimestamp) {
+    ColumnStatistics cs = ColumnStatisticsImpl.deserialize(null, statsProto);
     Object minValue = getMin(cs, useUTCTimestamp);
     Object maxValue = getMax(cs, useUTCTimestamp);
     // files written before ORC-135 stores timestamp wrt to local timezone causing issues with PPD.
     // disable PPD for timestamp for all old files
-    TypeDescription.Category category = type.getCategory();
-    if (category == TypeDescription.Category.TIMESTAMP) {
+    if (type.equals(TypeDescription.Category.TIMESTAMP)) {
       if (!writerVersion.includes(OrcFile.WriterVersion.ORC_135)) {
         LOG.debug("Not using predication pushdown on {} because it doesn't " +
                   "include ORC-135. Writer version: {}",
@@ -510,19 +489,10 @@ public class RecordReaderImpl implements RecordReader {
           predicate.getType() != PredicateLeaf.Type.STRING) {
         return TruthValue.YES_NO_NULL;
       }
-    } else if (writerVersion == OrcFile.WriterVersion.ORC_135 &&
-               category == TypeDescription.Category.DECIMAL &&
-               type.getPrecision() <= TypeDescription.MAX_DECIMAL64_PRECISION) {
-      // ORC 1.5.0 to 1.5.5, which use WriterVersion.ORC_135, have broken
-      // min and max values for decimal64. See ORC-517.
-      LOG.debug("Not using predicate push down on {}, because the file doesn't"+
-                   " include ORC-517. Writer version: {}",
-          predicate.getColumnName(), writerVersion);
-      return TruthValue.YES_NO_NULL;
     }
     return evaluatePredicateRange(predicate, minValue, maxValue, cs.hasNull(),
-        BloomFilterIO.deserialize(kind, encoding, writerVersion, type.getCategory(),
-            bloomFilter), useUTCTimestamp);
+        BloomFilterIO.deserialize(kind, encoding, writerVersion, type, bloomFilter),
+        useUTCTimestamp);
   }
 
   /**
@@ -901,21 +871,15 @@ public class RecordReaderImpl implements RecordReader {
     private SchemaEvolution evolution;
     private final long[] exceptionCount;
     private final boolean useUTCTimestamp;
-    private final boolean writerUsedProlepticGregorian;
-    private final boolean convertToProlepticGregorian;
 
     public SargApplier(SearchArgument sarg,
                        long rowIndexStride,
                        SchemaEvolution evolution,
                        OrcFile.WriterVersion writerVersion,
-                       boolean useUTCTimestamp,
-                       boolean writerUsedProlepticGregorian,
-                       boolean convertToProlepticGregorian) {
+                       boolean useUTCTimestamp) {
       this.writerVersion = writerVersion;
       this.sarg = sarg;
       sargLeaves = sarg.getLeaves();
-      this.writerUsedProlepticGregorian = writerUsedProlepticGregorian;
-      this.convertToProlepticGregorian = convertToProlepticGregorian;
       filterColumns = mapSargColumnsToOrcInternalColIdx(sargLeaves,
                                                         evolution);
       this.rowIndexStride = rowIndexStride;
@@ -983,10 +947,8 @@ public class RecordReaderImpl implements RecordReader {
                 leafValues[pred] = evaluatePredicateProto(stats,
                     predicate, bfk, encodings.get(columnIx), bf,
                     writerVersion, evolution.getFileSchema().
-                    findSubtype(columnIx),
-                    useUTCTimestamp,
-                    writerUsedProlepticGregorian,
-                    convertToProlepticGregorian);
+                    findSubtype(columnIx).getCategory(),
+                    useUTCTimestamp);
               } catch (Exception e) {
                 exceptionCount[pred] += 1;
                 if (e instanceof SargCastException) {
@@ -1426,13 +1388,7 @@ public class RecordReaderImpl implements RecordReader {
     PositionProvider[] index = new PositionProvider[indexes.length];
     for (int i = 0; i < indexes.length; ++i) {
       if (indexes[i] != null) {
-        OrcProto.RowIndexEntry entry = indexes[i].getEntry(rowEntry);
-        // This is effectively a test for pre-ORC-569 files.
-        if (rowEntry == 0 && entry.getPositionsCount() == 0) {
-          index[i] = new ZeroPositionProvider();
-        } else {
-          index[i] = new PositionProviderImpl(entry);
-        }
+        index[i] = new PositionProviderImpl(indexes[i].getEntry(rowEntry));
       }
     }
     reader.seek(index);

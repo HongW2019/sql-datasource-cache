@@ -16,7 +16,7 @@
  */
 package org.apache.spark.status.api.v1
 
-import javax.ws.rs.{GET, Path, Produces}
+import javax.ws.rs._
 import javax.ws.rs.core.MediaType
 
 import org.apache.spark.SparkEnv
@@ -41,7 +41,7 @@ private[v1] class OapAbstractApplicationResource extends BaseAppResource {
   @Path("fibercachemanagers")
   def fiberList(): Seq[FiberCacheManagerSummary] =
   {
-    val seqExecutorSummary: Seq[ExecutorSummary] = withUI(_.store.executorList(true))
+    val seqExecutorSummary = withUI(_.store.executorList(true))
     seqExecutorSummary.map(
       executorSummary =>
       {
@@ -53,7 +53,6 @@ private[v1] class OapAbstractApplicationResource extends BaseAppResource {
           } else {
             SparkEnv.get.conf.get(OapConf.OAP_INDEX_DATA_SEPARATION_ENABLE)
           }
-
         new FiberCacheManagerSummary(
           executorSummary.id,
           executorSummary.hostPort,
@@ -85,7 +84,6 @@ private[v1] class OapAbstractApplicationResource extends BaseAppResource {
       }
     )
   }
-
   /**
    * This method needs to be last, otherwise it clashes with the paths for the above methods
    * and causes JAX-RS to not find things.

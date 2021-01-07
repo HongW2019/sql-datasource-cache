@@ -742,13 +742,6 @@ object OapConf {
       .createWithDefault(false)
   }
 
-  val OAP_INDEXFILEOUTPUTCOMMITTER_ALGORITHM_VERSION =
-    SqlConfAdapter.buildConf("spark.sql.oap.indexfileoutputcommitter.algorithm.version")
-      .internal()
-      .doc("The commit algorithm version used by create index job")
-      .intConf
-      .createWithDefault(2)
-
   val OAP_EXTERNAL_CACHE_METADB_ENABLED = {
     SqlConfAdapter.buildConf("spark.sql.oap.external.cache.metaDB.enabled")
       .internal()

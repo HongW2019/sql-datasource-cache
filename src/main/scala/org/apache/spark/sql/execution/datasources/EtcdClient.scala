@@ -15,15 +15,21 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.orc;
+package org.apache.spark.sql.execution.datasources
 
-import org.apache.orc.storage.ql.exec.vector.ColumnVector;
+import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.types.DataType;
+import org.apache.spark.SparkEnv
 
-public final class OrcColumnVectorAllocator {
+class EtcdClient extends ExternalDBClient {
 
-  public static OrcColumnVector allocate(DataType type, ColumnVector vector) {
-    return new OrcColumnVector(type, vector);
-  }
+  override def init(sparkEnv: SparkEnv): Unit = {}
+
+  override def get(fileName: String, offSet: Long, length: Long):
+  ArrayBuffer[CacheMetaInfoValue] = null
+
+  override def upsert(cacheMetaInfo: CacheMetaInfo): Unit = {}
+
+  override def stop(): Unit = {}
+
 }

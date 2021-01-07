@@ -111,7 +111,6 @@ public class ParquetFiberDataReader implements Closeable {
       throw new IllegalArgumentException("Illegal row group of 0 rows");
     }
     ColumnChunkPageReadStore rowGroup = new ColumnChunkPageReadStore(block.getRowCount());
-
     DataFiberDescriptor descriptor =
       new DataFiberDescriptor(
         columnDescriptor,

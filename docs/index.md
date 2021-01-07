@@ -93,5 +93,5 @@ Caching is another core feature of OAP. It is also transparent to users. Data So
 
 
 
-###### \*Other names and brands may be claimed as the property of others.
+
 

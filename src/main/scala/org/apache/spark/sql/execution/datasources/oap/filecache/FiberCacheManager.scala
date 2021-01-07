@@ -35,7 +35,7 @@ import org.apache.spark.unsafe.Platform
 import org.apache.spark.util.Utils
 import org.apache.spark.util.collection.OapBitSet
 
-class FiberCacheManager(
+private[sql] class FiberCacheManager(
     sparkEnv: SparkEnv) extends Logging {
   private val GUAVA_CACHE = "guava"
   private val SIMPLE_CACHE = "simple"

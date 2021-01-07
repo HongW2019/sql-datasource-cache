@@ -24,8 +24,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
+import org.apache.spark.sql.catalyst.expressions.codegen.{BaseOrdering, GenerateOrdering}
 import org.apache.spark.sql.execution.datasources.OapException
 import org.apache.spark.sql.execution.datasources.oap.filecache._
 import org.apache.spark.sql.execution.datasources.oap.index.OapIndexProperties.IndexVersion
@@ -146,7 +145,7 @@ private[index] abstract class BTreeIndexRecordReader(
 
   def initialize(path: Path, intervalArray: ArrayBuffer[RangeInterval]): Unit = {
 
-    Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+    Option(TaskContext.get()).foreach(_.addTaskCompletionListener(_ => close()))
 
     if (!initialized) {
       initialized = true

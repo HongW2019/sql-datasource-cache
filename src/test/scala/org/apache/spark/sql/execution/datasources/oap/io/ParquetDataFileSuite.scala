@@ -18,8 +18,8 @@
 package org.apache.spark.sql.execution.datasources.oap.io
 
 import java.io.{File, IOException}
-import java.time.ZoneId
 import java.util
+import java.util.TimeZone
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -636,7 +636,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(0).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, IntegerType)
     // init reader
@@ -668,7 +668,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(1).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, LongType)
     // init reader
@@ -701,7 +701,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(2).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, BooleanType)
     // init reader
@@ -735,7 +735,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(3).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, FloatType)
     // init reader
@@ -769,7 +769,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(4).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, DoubleType)
     // init reader
@@ -803,7 +803,7 @@ class ParquetCacheDataWithDictionaryWithNullsCompressedSuite extends ParquetData
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(5).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, BinaryType)
     // init reader
@@ -874,7 +874,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(0).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, IntegerType)
     // init reader
@@ -904,7 +904,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(1).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, LongType)
     // init reader
@@ -935,7 +935,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(2).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, BooleanType)
     // init reader
@@ -967,7 +967,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(3).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, FloatType)
     // init reader
@@ -999,7 +999,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(4).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, DoubleType)
     // init reader
@@ -1031,7 +1031,7 @@ class ParquetCacheDataWithDictionaryWithoutNullsCompressedSuite extends ParquetD
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(5).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     val fiberCache = ParquetDataFiberCompressedWriter.
       dumpToCache(columnReader, rowCount, BinaryType)
     // init reader
@@ -1551,7 +1551,7 @@ class ParquetFiberDataReaderSuite extends ParquetDataFileSuite {
     val fiberData = reader.readFiberData(blockMetaData, columnDescriptor, columnMeta)
     val columnReader =
       new SkippableVectorizedColumnReader(columnDescriptor, types.get(0).getOriginalType,
-        fiberData.getPageReader(columnDescriptor), ZoneId.systemDefault, "LEGACY")
+        fiberData.getPageReader(columnDescriptor), TimeZone.getDefault)
     columnReader.readBatch(rowCount, vector)
     for (i <- 0 until rowCount) {
       assert(i * 2 == vector.getInt(i))

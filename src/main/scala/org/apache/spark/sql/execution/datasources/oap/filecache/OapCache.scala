@@ -24,6 +24,7 @@ import java.util.Collections
 import java.util.concurrent.{ConcurrentHashMap, Executors, LinkedBlockingQueue}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 import java.util.concurrent.locks.{Condition, ReentrantLock}
+import java.util.function.Consumer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -754,7 +755,7 @@ class GuavaOapCache(
         incFiberCountAndSize(key, 1, fiberCache.size())
         logDebug(
           "Load missed fiber took %s. Fiber: %s. length: %s".format(
-            Utils.getUsedTimeNs(startLoadingTime), key, fiberCache.size()))
+            Utils.getUsedTimeMs(startLoadingTime), key, fiberCache.size()))
         _cacheSize.addAndGet(fiberCache.size())
         fiberCache
       }
@@ -960,7 +961,7 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   private var cacheInit: Boolean = false
   private var externalDBClient: ExternalDBClient = null
 
-  if (conf.get(OapConf.OAP_EXTERNAL_CACHE_METADB_ENABLED) == true) {
+  if (SparkEnv.get.conf.get(OapConf.OAP_EXTERNAL_CACHE_METADB_ENABLED) == true) {
     externalDBClient = ExternalDBClientFactory.getDBClientInstance(SparkEnv.get)
   }
 
@@ -985,9 +986,9 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
   private var cacheTotalSize: AtomicLong = new AtomicLong(0)
 
   private def ExternalDataFiber(bb: ByteBuffer, objectId: Array[Byte],
-                                client: plasma.PlasmaClient): FiberCache = {
+    client: plasma.PlasmaClient): FiberCache = {
     val fiberData = MemoryBlockHolder(null, bb.asInstanceOf[DirectBuffer].address(),
-      bb.capacity(), bb.capacity(), SourceEnum.PM, objectId, client)
+                                      bb.capacity(), bb.capacity(), SourceEnum.PM, objectId, client)
     assert(fiberData.client != null)
     FiberCache(FiberType.DATA, fiberData)
   }
@@ -1142,9 +1143,16 @@ class ExternalCache(fiberType: FiberType) extends OapCache with Logging {
     // especially in multi executor case
     cacheTotalCount = new AtomicLong(fiberSet.size)
     val tmp = scala.collection.mutable.Set[FiberId]()
-    fiberSet.forEach(id => tmp.add(id))
-    // val tmp: Collections.synchronizedSet = fiberSet.clone()
+    fiberSet.forEach(toJavaConsumer((id: FiberId) => tmp.add(id)))
     tmp.toSet
+  }
+
+  def toJavaConsumer[T](consumer: (T) => Unit): Consumer[T] = {
+    new Consumer[T] {
+      override def accept(t: T): Unit = {
+        consumer(t)
+      }
+    }
   }
 
   override def invalidate(fiber: FiberId): Unit = { }

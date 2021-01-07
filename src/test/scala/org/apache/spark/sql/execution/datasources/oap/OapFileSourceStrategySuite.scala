@@ -19,13 +19,11 @@ package org.apache.spark.sql.execution.datasources.oap
 
 import org.scalatest.BeforeAndAfterEach
 
-import org.apache.spark.sql.{QueryTest, Row}
+import org.apache.spark.sql.QueryTest
 import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, OapFileSourceScanExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.test.oap.{SharedOapContext, TestIndex}
 import org.apache.spark.util.Utils
@@ -196,8 +194,8 @@ abstract class OapFileSourceStrategySuite extends QueryTest with SharedOapContex
     val optimizedSparkPlans = OapFileSourceStrategy(plan)
     assert(optimizedSparkPlans.size == 1)
     val optimizedSparkPlan = optimizedSparkPlans.head
-    assert(optimizedSparkPlan.isInstanceOf[OapFileSourceScanExec])
-    val relation = optimizedSparkPlan.asInstanceOf[OapFileSourceScanExec].relation
+    assert(optimizedSparkPlan.isInstanceOf[FileSourceScanExec])
+    val relation = optimizedSparkPlan.asInstanceOf[FileSourceScanExec].relation
     assert(verifyFileFormat(relation.fileFormat))
 
     val sparkPlans = FileSourceStrategy(plan)
@@ -245,6 +243,13 @@ class OapFileSourceStrategyForParquetSuite extends OapFileSourceStrategySuite {
     )
   }
 
+  test("Scan : Not Optimized") {
+    verifyScan(
+      format => format.isInstanceOf[ParquetFileFormat],
+      (plan1, plan2) => plan1.sameResult(plan2)
+    )
+  }
+
   test("Disable Optimized") {
     withSQLConf(OapConf.OAP_PARQUET_DATA_CACHE_ENABLED.key -> "true",
       OapConf.OAP_CACHE_RUNTIME_ENABLED.key -> "false") {
@@ -257,33 +262,6 @@ class OapFileSourceStrategyForParquetSuite extends OapFileSourceStrategySuite {
         format => format.isInstanceOf[ParquetFileFormat],
         (plan1, plan2) => plan1.sameResult(plan2)
       )
-    }
-  }
-
-  test("simple inner join triggers DPP with mock-up tables") {
-    withSQLConf(SQLConf.DYNAMIC_PARTITION_PRUNING_ENABLED.key -> "true",
-      SQLConf.DYNAMIC_PARTITION_PRUNING_REUSE_BROADCAST_ONLY.key -> "true",
-      SQLConf.EXCHANGE_REUSE_ENABLED.key -> "true") {
-      withTable("df1", "df2") {
-        spark.range(1000)
-          .select(col("id"), col("id").as("k"))
-          .write
-          .partitionBy("k")
-          .format(fileFormat)
-          .mode("overwrite")
-          .saveAsTable("df1")
-
-        spark.range(100)
-          .select(col("id"), col("id").as("k"))
-          .write
-          .partitionBy("k")
-          .format(fileFormat)
-          .mode("overwrite")
-          .saveAsTable("df2")
-
-        val df = sql("SELECT df1.id, df2.k FROM df1 JOIN df2 ON df1.k = df2.k AND df2.id < 2")
-        checkAnswer(df, Row(0, 0) :: Row(1, 1) :: Nil)
-      }
     }
   }
 }
@@ -316,30 +294,25 @@ class OapFileSourceStrategyForOrcSuite extends OapFileSourceStrategySuite {
     )
   }
 
-  test("simple inner join triggers DPP with mock-up tables") {
-    withSQLConf(SQLConf.DYNAMIC_PARTITION_PRUNING_ENABLED.key -> "true",
-      SQLConf.DYNAMIC_PARTITION_PRUNING_REUSE_BROADCAST_ONLY.key -> "true",
-      SQLConf.EXCHANGE_REUSE_ENABLED.key -> "true") {
-      withTable("df1", "df2") {
-        spark.range(1000)
-          .select(col("id"), col("id").as("k"))
-          .write
-          .partitionBy("k")
-          .format(fileFormat)
-          .mode("overwrite")
-          .saveAsTable("df1")
-
-        spark.range(100)
-          .select(col("id"), col("id").as("k"))
-          .write
-          .partitionBy("k")
-          .format(fileFormat)
-          .mode("overwrite")
-          .saveAsTable("df2")
-
-        val df = sql("SELECT df1.id, df2.k FROM df1 JOIN df2 ON df1.k = df2.k AND df2.id < 2")
-        checkAnswer(df, Row(0, 0) :: Row(1, 1) :: Nil)
-      }
+  test("Disable Optimized") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      OapConf.OAP_CACHE_RUNTIME_ENABLED.key -> "false") {
+      verifyProjectScan(
+        format => format.isInstanceOf[OrcFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
+      verifyProjectFilterScan(
+        indexColumn = "b",
+        format => format.isInstanceOf[OrcFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
     }
+  }
+
+  test("Scan : Not Optimized") {
+    verifyScan(
+      format => format.isInstanceOf[OrcFileFormat],
+      (plan1, plan2) => plan1.sameResult(plan2)
+    )
   }
 }

@@ -36,7 +36,6 @@ import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.oap._
 import org.apache.spark.sql.execution.datasources.oap.utils.OapUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.oap.OapConf
 import org.apache.spark.sql.oap.OapRuntime
 import org.apache.spark.sql.oap.rpc.OapMessages.CacheDrop
@@ -242,7 +241,7 @@ case class DropIndexCommand(
           map(p => {
             val hadoopConfiguration = broadcastedConf.value.value
             val parent = new Path(p)
-            val fs = parent.getFileSystem(hadoopConfiguration)
+            val fs = FileSystem.get(hadoopConfiguration)
             if (fs.exists(new Path(parent, OapFileFormat.OAP_META_FILE))) {
               val metaBuilder = new DataSourceMetaBuilder()
               val m = OapUtils.getMeta(hadoopConfiguration, parent)
@@ -277,7 +276,7 @@ case class DropIndexCommand(
           sparkContext.makeRDD(paths.toSeq, paths.toSeq.length).map{ p =>
             val hadoopConfiguration = broadcastedConf.value.value
             val parent = new Path(p).getParent
-            val fs = parent.getFileSystem(hadoopConfiguration)
+            val fs = FileSystem.get(hadoopConfiguration)
             fs.listStatus(parent, new PathFilter {
               override def accept(path: Path): Boolean = path.getName.endsWith(
                 "." + indexName + OapFileFormat.OAP_INDEX_EXTENSION)
@@ -295,9 +294,7 @@ case class DropIndexCommand(
               throw new AnalysisException(s"""Index $indexName does not exist on $parent""")
           }
         }
-      case other =>
-        throw new OapException(s"We don't support index listing for " +
-          s"${other.simpleString(SQLConf.get.maxToStringFields)}")
+      case other => sys.error(s"We don't support index dropping for ${other.simpleString}")
     }
     Seq.empty
   }
@@ -469,8 +466,7 @@ case class OapShowIndexCommand(table: TableIdentifier, relationName: String)
       case LogicalRelation(HadoopFsRelation(f, _, s, _, _, _), _, id, _) =>
         (f, s)
       case other =>
-        throw new OapException(s"We don't support index checking for " +
-          s"${other.simpleString(SQLConf.get.maxToStringFields)}")
+        throw new OapException(s"We don't support index listing for ${other.simpleString}")
     }
 
     val partitions = OapUtils.getPartitions(fileCatalog).filter(_.files.nonEmpty)
@@ -649,8 +645,7 @@ case class OapCheckIndexCommand(
       case LogicalRelation(HadoopFsRelation(f, _, s, _, _, _), _, id, _) =>
         (f, s)
       case other =>
-        throw new OapException(s"We don't support index checking for " +
-          s"${other.simpleString(SQLConf.get.maxToStringFields)}")
+        throw new OapException(s"We don't support index checking for ${other.simpleString}")
     }
 
     val rootPaths = fileCatalog.rootPaths

@@ -22,9 +22,11 @@ import org.scalatest.BeforeAndAfterEach
 import org.apache.spark.sql.QueryTest
 import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, OapFileSourceScanExec, ProjectExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.oap.OapConf
-import org.apache.spark.sql.test.oap.{SharedOapContext}
+import org.apache.spark.sql.test.oap.{SharedOapContext, TestIndex}
 import org.apache.spark.util.Utils
 
 abstract class CacheHotTablesSuite extends QueryTest with SharedOapContext with
@@ -113,6 +115,7 @@ abstract class CacheHotTablesSuite extends QueryTest with SharedOapContext with
     assert(sparkPlans.size == 1)
     val sparkPlan = sparkPlans.head
     assert(verifySparkPlan(sparkPlan, optimizedSparkPlan))
+
   }
 
   protected def verifyOapProjectScan(
@@ -171,7 +174,7 @@ abstract class CacheHotTablesSuite extends QueryTest with SharedOapContext with
     assert(verifySparkPlan(sparkPlan, optimizedSparkPlan))
   }
 
-  protected def verifyScan(
+  protected def verifyOapScan(
       verifyFileFormat: FileFormat => Boolean,
       verifySparkPlan: (SparkPlan, SparkPlan) => Boolean): Unit = {
     val data: Seq[(Int, String)] = (1 to 300).map { i => (i, s"this is test $i") }
@@ -184,6 +187,28 @@ abstract class CacheHotTablesSuite extends QueryTest with SharedOapContext with
     val optimizedSparkPlan = optimizedSparkPlans.head
     assert(optimizedSparkPlan.isInstanceOf[OapFileSourceScanExec])
     val relation = optimizedSparkPlan.asInstanceOf[OapFileSourceScanExec].relation
+    assert(verifyFileFormat(relation.fileFormat))
+
+    val sparkPlans = FileSourceStrategy(plan)
+    assert(sparkPlans.size == 1)
+    val sparkPlan = sparkPlans.head
+
+    assert(verifySparkPlan(sparkPlan, optimizedSparkPlan))
+  }
+
+  protected def verifyScan(
+      verifyFileFormat: FileFormat => Boolean,
+      verifySparkPlan: (SparkPlan, SparkPlan) => Boolean): Unit = {
+    val data: Seq[(Int, String)] = (1 to 300).map { i => (i, s"this is test $i") }
+    data.toDF("key", "value").createOrReplaceTempView("t")
+    sql(s"insert overwrite table $testTableName select * from t")
+
+    val plan = sql(s"FROM $testTableName").queryExecution.optimizedPlan
+    val optimizedSparkPlans = OapFileSourceStrategy(plan)
+    assert(optimizedSparkPlans.size == 1)
+    val optimizedSparkPlan = optimizedSparkPlans.head
+    assert(optimizedSparkPlan.isInstanceOf[FileSourceScanExec])
+    val relation = optimizedSparkPlan.asInstanceOf[FileSourceScanExec].relation
     assert(verifyFileFormat(relation.fileFormat))
 
     val sparkPlans = FileSourceStrategy(plan)
@@ -258,4 +283,140 @@ class CacheHotTablesForParquetSuite extends CacheHotTablesSuite {
       )
     }
   }
+
+  test("Scan : Optimized") {
+    withSQLConf(OapConf.OAP_PARQUET_DATA_CACHE_ENABLED.key -> "true") {
+      verifyOapScan(
+        format => format.isInstanceOf[OptimizedParquetFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Scan : Not Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_PARQUET_DATA_CACHE_ENABLED.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true") {
+      verifyScan(
+        format => format.isInstanceOf[ParquetFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Scan : Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_PARQUET_DATA_CACHE_ENABLED.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS.key -> "default.parquet_test;xxx") {
+      verifyOapScan(
+        format => format.isInstanceOf[OptimizedParquetFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
 }
+
+class CacheHotTablesForOrcSuite extends CacheHotTablesSuite {
+  protected def testTableName: String = "orc_test"
+
+  protected def fileFormat: String = "orc"
+
+  test("Project-> Filter -> Scan : Optimized") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true") {
+      verifyOapProjectFilterScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Project-> Filter -> Scan : Not Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true") {
+      verifyProjectFilterScan(
+        format => format.isInstanceOf[OrcFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Project-> Filter -> Scan : Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS.key -> "default.orc_test;xxx") {
+      verifyOapProjectFilterScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Project -> Scan : Optimized") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true") {
+      verifyOapProjectScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Project -> Scan :  Not Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true") {
+      verifyProjectScan(
+        format => format.isInstanceOf[OrcFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Project -> Scan :  Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS.key -> "default.orc_test;xxx") {
+      verifyOapProjectScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Scan : Optimized") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true") {
+      verifyOapScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Scan : Not Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true") {
+      verifyScan(
+        format => format.isInstanceOf[OrcFileFormat],
+        (plan1, plan2) => plan1.sameResult(plan2)
+      )
+    }
+  }
+
+  test("Scan : Optimized, only cache hot Tables") {
+    withSQLConf(OapConf.OAP_ORC_DATA_CACHE_ENABLED.key -> "true",
+      SQLConf.ORC_COPY_BATCH_TO_SPARK.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS_ENABLE.key -> "true",
+      OapConf.OAP_CACHE_TABLE_LISTS.key -> "default.orc_test;xxx") {
+      verifyOapScan(
+        format => format.isInstanceOf[OptimizedOrcFileFormat],
+        (plan1, plan2) => !plan1.sameResult(plan2)
+      )
+    }
+  }
+}
+

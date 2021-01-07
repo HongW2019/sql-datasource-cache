@@ -51,17 +51,17 @@ private[spark] class OapRpcManagerSlave(
   startOapHeartbeater()
 
   protected def heartbeatMessages: Array[() => Heartbeat] = {
-    Array(
-      () => FiberCacheHeartbeat(
-        executorId, blockManager.blockManagerId, fiberCacheManager.status()),
-      () => FiberCacheMetricsHeartbeat(executorId, blockManager.blockManagerId,
-        CacheStats.status(fiberCacheManager.cacheStats, conf)))
-  }
-
-  protected def metricsHeartbeatMessages: Array[() => Heartbeat] = {
-    return Array(
-      () => FiberCacheMetricsHeartbeat(executorId, blockManager.blockManagerId,
-        CacheStats.status(fiberCacheManager.cacheStats, conf)))
+    if (SparkEnv.get.conf.get(OapConf.OAP_EXTERNAL_CACHE_METADB_ENABLED)) {
+      return Array(
+        () => FiberCacheMetricsHeartbeat(executorId, blockManager.blockManagerId,
+          CacheStats.status(fiberCacheManager.cacheStats, conf)))
+    } else {
+      return Array(
+        () => FiberCacheHeartbeat(
+          executorId, blockManager.blockManagerId, fiberCacheManager.status()),
+        () => FiberCacheMetricsHeartbeat(executorId, blockManager.blockManagerId,
+          CacheStats.status(fiberCacheManager.cacheStats, conf)))
+    }
   }
 
   private def initialize() = {
@@ -84,12 +84,6 @@ private[spark] class OapRpcManagerSlave(
       }
     }
 
-    def reportMetricsHeartbeat(): Unit = {
-      if (blockManager.blockManagerId != null) {
-        metricsHeartbeatMessages.map(_.apply()).foreach(send)
-      }
-    }
-
     val intervalMs = conf.getTimeAsMs(
       OapConf.OAP_HEARTBEAT_INTERVAL.key, OapConf.OAP_HEARTBEAT_INTERVAL.defaultValue.get)
 
@@ -99,18 +93,8 @@ private[spark] class OapRpcManagerSlave(
     val heartbeatTask = new Runnable() {
       override def run(): Unit = Utils.logUncaughtExceptions(reportHeartbeat())
     }
-
-    val metricsHeartbeatTask = new Runnable() {
-      override def run(): Unit = Utils.logUncaughtExceptions(reportMetricsHeartbeat())
-    }
-
-    if (!SparkEnv.get.conf.get(OapConf.OAP_EXTERNAL_CACHE_METADB_ENABLED)) {
-      oapHeartbeater.scheduleAtFixedRate(
-        heartbeatTask, initialDelay, intervalMs, TimeUnit.MILLISECONDS)
-    } else {
-      oapHeartbeater.scheduleAtFixedRate(
-        metricsHeartbeatTask, initialDelay, intervalMs, TimeUnit.MILLISECONDS)
-    }
+    oapHeartbeater.scheduleAtFixedRate(
+      heartbeatTask, initialDelay, intervalMs, TimeUnit.MILLISECONDS)
   }
 
   override private[spark] def stop(): Unit = {

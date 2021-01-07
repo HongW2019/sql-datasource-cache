@@ -18,7 +18,7 @@
 package org.apache.spark.sql.execution.datasources
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{DynamicPruningSubquery, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.datasources.oap.{OptimizedOrcFileFormat, OptimizedParquetFileFormat}
 import org.apache.spark.sql.execution.datasources.orc.ReadOnlyNativeOrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFileFormat, ReadOnlyParquetFileFormat}
@@ -40,10 +40,8 @@ object HadoopFsRelationOptimizer extends Logging {
       dataFilters: Seq[Expression],
       outputSchema: StructType): (HadoopFsRelation, Boolean) = {
 
-    def selectedPartitions: Seq[PartitionDirectory] = {
-      relation.location.listFiles(
-        partitionKeyFilters.filterNot(p => p.isInstanceOf[DynamicPruningSubquery]), Nil)
-    }
+    def selectedPartitions: Seq[PartitionDirectory] =
+      relation.location.listFiles(partitionKeyFilters, Nil)
 
     val oapParquetEnabled =
       if (relation.sparkSession.conf.contains(OapConf.OAP_PARQUET_ENABLED.key)) {
@@ -155,20 +153,15 @@ object HadoopFsRelationOptimizer extends Logging {
             relation.options,
             selectedPartitions.flatMap(p => p.files))
 
-  /**
-   * Spark-3.0 has removed internal ORC configuration "spark.sql.orc.copyBatchToSpark"
-   * to simplify the code path, so it won't copy the ORC columnar batch to Spark columnar batch
-   * in the vectorized ORC reader. Then OAP does not support orc columnVectorCache for now
-   */
         def canUseCache: Boolean = {
           val runtimeConf = relation.sparkSession.conf
-//          var vectorCacheEnabled = runtimeConf.get(OapConf.OAP_ORC_DATA_CACHE_ENABLED)
-//          logDebug(s"config - ${OapConf.OAP_ORC_DATA_CACHE_ENABLED.key} is $vectorCacheEnabled")
-//          vectorCacheEnabled = vectorCacheEnabled &&
-//            runtimeConf.get(SQLConf.ORC_VECTORIZED_READER_ENABLED) &&
-//            runtimeConf.get(SQLConf.WHOLESTAGE_CODEGEN_ENABLED) &&
-//            runtimeConf.get(SQLConf.ORC_COPY_BATCH_TO_SPARK) &&
-//            outputSchema.forall(_.dataType.isInstanceOf[AtomicType])
+          var vectorCacheEnabled = runtimeConf.get(OapConf.OAP_ORC_DATA_CACHE_ENABLED)
+          logDebug(s"config - ${OapConf.OAP_ORC_DATA_CACHE_ENABLED.key} is $vectorCacheEnabled")
+          vectorCacheEnabled = vectorCacheEnabled &&
+            runtimeConf.get(SQLConf.ORC_VECTORIZED_READER_ENABLED) &&
+            runtimeConf.get(SQLConf.WHOLESTAGE_CODEGEN_ENABLED) &&
+            runtimeConf.get(SQLConf.ORC_COPY_BATCH_TO_SPARK) &&
+            outputSchema.forall(_.dataType.isInstanceOf[AtomicType])
           val binaryCacheEnabled =
             if (relation.sparkSession.conf.contains(OapConf.OAP_ORC_BINARY_DATA_CACHE_ENABLED.key)) {
             runtimeConf.get(OapConf.OAP_ORC_BINARY_DATA_CACHE_ENABLED)
@@ -177,9 +170,9 @@ object HadoopFsRelationOptimizer extends Logging {
             }
           logDebug(s"config - ${OapConf.OAP_ORC_BINARY_DATA_CACHE_ENABLED.key}" +
             s"is $binaryCacheEnabled")
-          val ret = binaryCacheEnabled
+          val ret = vectorCacheEnabled || binaryCacheEnabled
           if (ret) {
-            logInfo("ORC binary cache is enabled and suitable for use , " +
+            logInfo("data cache enable and suitable for use , " +
               "will replace with optimizedOrcFileFormat.")
           }
           ret

@@ -18,9 +18,8 @@
 package org.apache.spark.sql.execution.datasources.parquet;
 
 import java.io.IOException;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.TimeZone;
 
 import org.apache.parquet.bytes.ByteBufferInputStream;
 import org.apache.parquet.bytes.BytesInput;
@@ -36,8 +35,6 @@ import org.apache.parquet.schema.PrimitiveType;
 import static org.apache.parquet.column.ValuesType.REPETITION_LEVEL;
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils;
-import org.apache.spark.sql.catalyst.util.RebaseDateTime;
-import org.apache.spark.sql.execution.datasources.DataSourceUtils;
 import org.apache.spark.sql.execution.datasources.SchemaColumnConvertNotSupportedException;
 import org.apache.spark.sql.execution.vectorized.WritableColumnVector;
 import org.apache.spark.sql.types.DataType;
@@ -49,35 +46,36 @@ import org.apache.spark.sql.types.DecimalType;
  * read method of VectorizedColumnReader.
  */
 public class SkippableVectorizedColumnReader {
+
   /**
    * Total number of values read.
    */
-  private long valuesRead;
+  protected long valuesRead;
 
   /**
    * value that indicates the end of the current page. That is,
    * if valuesRead == endOfPageValueCount, we are at the end of the page.
    */
-  private long endOfPageValueCount;
+  protected long endOfPageValueCount;
 
   /**
    * The dictionary, if this column has dictionary encoding.
    */
-  private final Dictionary dictionary;
+  protected final Dictionary dictionary;
 
   /**
    * If true, the current page is dictionary encoded.
    */
-  private boolean isCurrentPageDictionaryEncoded;
+  protected boolean isCurrentPageDictionaryEncoded;
 
   /**
    * Maximum definition level for this column.
    */
-  private final int maxDefLevel;
+  protected final int maxDefLevel;
 
   private SpecificParquetRecordReaderBase.IntIterator definitionLevelColumn;
 
-  private ValuesReader dataColumn;
+  protected ValuesReader dataColumn;
 
   /**
    * Reference dataColumn, but Type is SkippableVectorizedValuesReader, reduce manual cast
@@ -99,25 +97,20 @@ public class SkippableVectorizedColumnReader {
   /**
    * Total values in the current page.
    */
-  private int pageValueCount;
+  protected int pageValueCount;
 
   private final PageReader pageReader;
-  private final ColumnDescriptor descriptor;
-  private final OriginalType originalType;
+  protected final ColumnDescriptor descriptor;
+  protected final OriginalType originalType;
   // The timezone conversion to apply to int96 timestamps. Null if no conversion.
-  private final ZoneId convertTz;
-  private static final ZoneId UTC = ZoneOffset.UTC;
-  private final String datetimeRebaseMode;
+  private final TimeZone convertTz;
+  private static final TimeZone UTC = DateTimeUtils.TimeZoneUTC();
 
-
-  public SkippableVectorizedColumnReader(
-      ColumnDescriptor descriptor,
-      OriginalType originalType,
-      PageReader pageReader,
-      ZoneId convertTz,
-      String datetimeRebaseMode
-      )
-      throws IOException {
+   public SkippableVectorizedColumnReader(
+           ColumnDescriptor descriptor,
+           OriginalType originalType,
+           PageReader pageReader,
+           TimeZone convertTz) throws IOException {
     this.descriptor = descriptor;
     this.pageReader = pageReader;
     this.convertTz = convertTz;
@@ -140,12 +133,7 @@ public class SkippableVectorizedColumnReader {
     if (totalValueCount == 0) {
       throw new IOException("totalValueCount == 0");
     }
-    assert "LEGACY".equals(datetimeRebaseMode) || "EXCEPTION".equals(datetimeRebaseMode) ||
-            "CORRECTED".equals(datetimeRebaseMode);
-    this.datetimeRebaseMode = datetimeRebaseMode;
   }
-
-
 
   /**
    * Advances to the next value. Returns true if the value is non-null.
@@ -162,52 +150,6 @@ public class SkippableVectorizedColumnReader {
     // TODO: Don't read for flat schemas
     //repetitionLevel = repetitionLevelColumn.nextInt();
     return definitionLevelColumn.nextInt() == maxDefLevel;
-  }
-
-  private boolean isLazyDecodingSupported(PrimitiveType.PrimitiveTypeName typeName) {
-    boolean isSupported = false;
-    switch (typeName) {
-      case INT32:
-        isSupported = originalType != OriginalType.DATE || "CORRECTED".equals(datetimeRebaseMode);
-        break;
-      case INT64:
-        if (originalType == OriginalType.TIMESTAMP_MICROS) {
-          isSupported = "CORRECTED".equals(datetimeRebaseMode);
-        } else {
-          isSupported = originalType != OriginalType.TIMESTAMP_MILLIS;
-        }
-        break;
-      case FLOAT:
-      case DOUBLE:
-      case BINARY:
-        isSupported = true;
-        break;
-    }
-    return isSupported;
-  }
-
-  static int rebaseDays(int julianDays, final boolean failIfRebase) {
-    if (failIfRebase) {
-      if (julianDays < RebaseDateTime.lastSwitchJulianDay()) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet");
-      } else {
-        return julianDays;
-      }
-    } else {
-      return RebaseDateTime.rebaseJulianToGregorianDays(julianDays);
-    }
-  }
-
-  static long rebaseMicros(long julianMicros, final boolean failIfRebase) {
-    if (failIfRebase) {
-      if (julianMicros < RebaseDateTime.lastSwitchJulianTs()) {
-        throw DataSourceUtils.newRebaseExceptionInRead("Parquet");
-      } else {
-        return julianMicros;
-      }
-    } else {
-      return RebaseDateTime.rebaseJulianToGregorianMicros(julianMicros);
-    }
   }
 
   /**
@@ -234,12 +176,18 @@ public class SkippableVectorizedColumnReader {
               descriptor.getPrimitiveType().getPrimitiveTypeName();
       if (isCurrentPageDictionaryEncoded) {
         // Read and decode dictionary ids.
-        defColumnRef.readIntegers(num,
-                dictionaryIds, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
+        defColumnRef.readIntegers(num, dictionaryIds,
+                column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
 
         // TIMESTAMP_MILLIS encoded as INT64 can't be lazily decoded as we need to post process
         // the values to add microseconds precision.
-        if (column.hasDictionary() || (rowId == 0 && isLazyDecodingSupported(typeName))) {
+        if (column.hasDictionary() || (rowId == 0 &&
+                (typeName == PrimitiveType.PrimitiveTypeName.INT32 ||
+                        (typeName == PrimitiveType.PrimitiveTypeName.INT64 &&
+                                originalType != OriginalType.TIMESTAMP_MILLIS) ||
+                        typeName == PrimitiveType.PrimitiveTypeName.FLOAT ||
+                        typeName == PrimitiveType.PrimitiveTypeName.DOUBLE ||
+                        typeName == PrimitiveType.PrimitiveTypeName.BINARY))) {
           // Column vector supports lazy decoding of dictionary values so just set the dictionary.
           // We can't do this if rowId != 0 AND the column doesn't have a dictionary (i.e. some
           // non-dictionary encoded values have already been added).
@@ -318,9 +266,7 @@ public class SkippableVectorizedColumnReader {
     switch (descriptor.getPrimitiveType().getPrimitiveTypeName()) {
       case INT32:
         if (column.dataType() == DataTypes.IntegerType ||
-                DecimalType.is32BitDecimalType(column.dataType()) ||
-                (column.dataType() ==
-                        DataTypes.DateType && "CORRECTED".equals(datetimeRebaseMode))) {
+                DecimalType.is32BitDecimalType(column.dataType())) {
           for (int i = rowId; i < rowId + num; ++i) {
             if (!column.isNullAt(i)) {
               column.putInt(i, dictionary.decodeToInt(dictionaryIds.getDictId(i)));
@@ -338,14 +284,6 @@ public class SkippableVectorizedColumnReader {
               column.putShort(i, (short) dictionary.decodeToInt(dictionaryIds.getDictId(i)));
             }
           }
-        } else if (column.dataType() == DataTypes.DateType) {
-          final boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
-          for (int i = rowId; i < rowId + num; ++i) {
-            if (!column.isNullAt(i)) {
-              int julianDays = dictionary.decodeToInt(dictionaryIds.getDictId(i));
-              column.putInt(i, rebaseDays(julianDays, failIfRebase));
-            }
-          }
         } else {
           throw constructConvertNotSupportedException(descriptor, column);
         }
@@ -354,37 +292,17 @@ public class SkippableVectorizedColumnReader {
       case INT64:
         if (column.dataType() == DataTypes.LongType ||
                 DecimalType.is64BitDecimalType(column.dataType()) ||
-                (originalType == OriginalType.TIMESTAMP_MICROS &&
-                        "CORRECTED".equals(datetimeRebaseMode))) {
+                originalType == OriginalType.TIMESTAMP_MICROS) {
           for (int i = rowId; i < rowId + num; ++i) {
             if (!column.isNullAt(i)) {
               column.putLong(i, dictionary.decodeToLong(dictionaryIds.getDictId(i)));
             }
           }
         } else if (originalType == OriginalType.TIMESTAMP_MILLIS) {
-          if ("CORRECTED".equals(datetimeRebaseMode)) {
-            for (int i = rowId; i < rowId + num; ++i) {
-              if (!column.isNullAt(i)) {
-                long gregorianMillis = dictionary.decodeToLong(dictionaryIds.getDictId(i));
-                column.putLong(i, DateTimeUtils.fromMillis(gregorianMillis));
-              }
-            }
-          } else {
-            final boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
-            for (int i = rowId; i < rowId + num; ++i) {
-              if (!column.isNullAt(i)) {
-                long julianMillis = dictionary.decodeToLong(dictionaryIds.getDictId(i));
-                long julianMicros = DateTimeUtils.fromMillis(julianMillis);
-                column.putLong(i, rebaseMicros(julianMicros, failIfRebase));
-              }
-            }
-          }
-        } else if (originalType == OriginalType.TIMESTAMP_MICROS) {
-          final boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
           for (int i = rowId; i < rowId + num; ++i) {
             if (!column.isNullAt(i)) {
-              long julianMicros = dictionary.decodeToLong(dictionaryIds.getDictId(i));
-              column.putLong(i, rebaseMicros(julianMicros, failIfRebase));
+              column.putLong(i,
+                DateTimeUtils.fromMillis(dictionary.decodeToLong(dictionaryIds.getDictId(i))));
             }
           }
         } else {
@@ -493,7 +411,7 @@ public class SkippableVectorizedColumnReader {
   private void readIntBatch(int rowId, int num, WritableColumnVector column) throws IOException {
     // This is where we implement support for the valid type conversions.
     // TODO: implement remaining type conversions
-    if (column.dataType() == DataTypes.IntegerType ||
+    if (column.dataType() == DataTypes.IntegerType || column.dataType() == DataTypes.DateType ||
             DecimalType.is32BitDecimalType(column.dataType())) {
       defColumnRef.readIntegers(
               num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
@@ -503,15 +421,6 @@ public class SkippableVectorizedColumnReader {
     } else if (column.dataType() == DataTypes.ShortType) {
       defColumnRef.readShorts(
               num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
-    } else if (column.dataType() == DataTypes.DateType ) {
-      if ("CORRECTED".equals(datetimeRebaseMode)) {
-        defColumnRef.readIntegers(
-                num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
-      } else {
-        boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
-        defColumnRef.readIntegersWithRebase(
-                num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn, failIfRebase);
-      }
     } else {
       throw constructConvertNotSupportedException(descriptor, column);
     }
@@ -520,36 +429,16 @@ public class SkippableVectorizedColumnReader {
   private void readLongBatch(int rowId, int num, WritableColumnVector column) throws IOException {
     // This is where we implement support for the valid type conversions.
     if (column.dataType() == DataTypes.LongType ||
-            DecimalType.is64BitDecimalType(column.dataType())) {
+            DecimalType.is64BitDecimalType(column.dataType()) ||
+            originalType == OriginalType.TIMESTAMP_MICROS) {
       defColumnRef.readLongs(
               num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
-    } else if (originalType == OriginalType.TIMESTAMP_MICROS) {
-      if ("CORRECTED".equals(datetimeRebaseMode)) {
-        defColumnRef.readLongs(
-                num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn);
-      } else {
-        boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
-        defColumnRef.readLongsWithRebase(
-                num, column, rowId, maxDefLevel, (VectorizedValuesReader) dataColumn, failIfRebase);
-      }
     } else if (originalType == OriginalType.TIMESTAMP_MILLIS) {
-      if ("CORRECTED".equals(datetimeRebaseMode)) {
-        for (int i = 0; i < num; i++) {
-          if (defColumnRef.readInteger() == maxDefLevel) {
-            column.putLong(rowId + i, DateTimeUtils.fromMillis(dataColumn.readLong()));
-          } else {
-            column.putNull(rowId + i);
-          }
-        }
-      } else {
-        final boolean failIfRebase = "EXCEPTION".equals(datetimeRebaseMode);
-        for (int i = 0; i < num; i++) {
-          if (defColumnRef.readInteger() == maxDefLevel) {
-            long julianMicros = DateTimeUtils.fromMillis(dataColumn.readLong());
-            column.putLong(rowId + i, rebaseMicros(julianMicros, failIfRebase));
-          } else {
-            column.putNull(rowId + i);
-          }
+      for (int i = 0; i < num; i++) {
+        if (defColumnRef.readInteger() == maxDefLevel) {
+          column.putLong(rowId + i, DateTimeUtils.fromMillis(dataColumn.readLong()));
+        } else {
+          column.putNull(rowId + i);
         }
       }
     } else {
@@ -589,7 +478,7 @@ public class SkippableVectorizedColumnReader {
     } else if (column.dataType() == DataTypes.TimestampType) {
       if (!shouldConvertTimestamps()) {
         for (int i = 0; i < num; i++) {
-          if (defColumnRef.readInteger() == maxDefLevel) {
+          if (dataColumnRef.readInteger() == maxDefLevel) {
             // Read 12 bytes for INT96
             long rawTime = ParquetRowConverter.binaryToSQLTimestamp(data.readBinary(12));
             column.putLong(rowId + i, rawTime);
@@ -653,8 +542,7 @@ public class SkippableVectorizedColumnReader {
     }
   }
 
-
-  private void readPage() {
+  protected void readPage() {
     DataPage page = pageReader.readPage();
     // TODO: Why is this a visitor?
     page.accept(new DataPage.Visitor<Void>() {
@@ -679,14 +567,6 @@ public class SkippableVectorizedColumnReader {
       }
     });
   }
-
-
-
-
-
-
-
-
 
   /**
    * Skip `total` values from this columnReader, ColumnVector used to
@@ -885,7 +765,6 @@ public class SkippableVectorizedColumnReader {
    * This method refer to initDataReader in VectorizedColumnReader,
    * just modified the assignment of dataColumn.
    */
-
   protected void initDataReader(Encoding dataEncoding, ByteBufferInputStream in)
     throws IOException {
     this.endOfPageValueCount = valuesRead + pageValueCount;
@@ -922,6 +801,11 @@ public class SkippableVectorizedColumnReader {
     }
   }
 
+  /**
+   * This method refer to readPageV1 in VectorizedColumnReader,
+   * modified the assignment of defColumn and remove assignment to
+   * repetitionLevelColumn & definitionLevelColumn because they are useless.
+   */
   protected void readPageV1(DataPageV1 page) throws IOException {
     this.pageValueCount = page.getValueCount();
     ValuesReader rlReader = page.getRlEncoding().getValuesReader(descriptor, REPETITION_LEVEL);
@@ -933,6 +817,8 @@ public class SkippableVectorizedColumnReader {
     }
     int bitWidth = BytesUtils.getWidthFromMaxInt(descriptor.getMaxDefinitionLevel());
     this.defColumnRef = new SkippableVectorizedRleValuesReader(bitWidth);
+    // defColumnRef reference defColumn and type is SkippableVectorizedRleValuesReader
+    this.defColumnRef = (SkippableVectorizedRleValuesReader)this.defColumnRef;
     dlReader = this.defColumnRef;
     try {
       BytesInput bytes = page.getBytes();
@@ -945,6 +831,11 @@ public class SkippableVectorizedColumnReader {
     }
   }
 
+  /**
+   * This method refer to readPageV2 in VectorizedColumnReader,
+   * modified the assignment of defColumn and remove assignment to
+   * repetitionLevelColumn & definitionLevelColumn because they are useless.
+   */
   protected void readPageV2(DataPageV2 page) throws IOException {
     this.pageValueCount = page.getValueCount();
 
@@ -953,6 +844,8 @@ public class SkippableVectorizedColumnReader {
     this.defColumnRef = new SkippableVectorizedRleValuesReader(bitWidth, false);
     this.defColumnRef.initFromPage(
             this.pageValueCount, page.getDefinitionLevels().toInputStream());
+    // defColumnRef reference defColumn and type is SkippableVectorizedRleValuesReader
+    this.defColumnRef = (SkippableVectorizedRleValuesReader) this.defColumnRef;
     try {
       initDataReader(page.getDataEncoding(), page.getData().toInputStream());
     } catch (IOException e) {

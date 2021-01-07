@@ -133,7 +133,7 @@ private[oap] case class ParquetDataFile(
       case _ =>
         addRequestSchemaToConf(configuration, requiredIds)
         initRecordReader(
-          new MrOapRecordReader[InternalRow](new ParquetReadSupportWrapper,
+          new MrOapRecordReader[UnsafeRow](new ParquetReadSupportWrapper,
             file, configuration, meta.footer))
     }
     iterator.asInstanceOf[OapCompletionIterator[Any]]
@@ -166,7 +166,7 @@ private[oap] case class ParquetDataFile(
         case _ =>
           addRequestSchemaToConf(configuration, requiredIds)
           initRecordReader(
-            new IndexedMrOapRecordReader[InternalRow](new ParquetReadSupportWrapper,
+            new IndexedMrOapRecordReader[UnsafeRow](new ParquetReadSupportWrapper,
               file, configuration, rowIds, meta.footer))
       }
       iterator.asInstanceOf[OapCompletionIterator[Any]]
@@ -179,9 +179,9 @@ private[oap] case class ParquetDataFile(
   def setPartitionedFile(file: PartitionedFile): Unit =
     this.partitionedFile = file
 
-  private def initRecordReader(reader: RecordReader[InternalRow]) = {
+  private def initRecordReader(reader: RecordReader[UnsafeRow]) = {
     reader.initialize()
-    val iterator = new FileRecordReaderIterator[InternalRow](reader)
+    val iterator = new FileRecordReaderIterator[UnsafeRow](reader)
     new OapCompletionIterator[InternalRow](iterator, {}) {
       override def close(): Unit = iterator.close()
     }

@@ -20,18 +20,18 @@ package org.apache.spark.sql.execution.datasources
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.SparkEnv
-import org.apache.spark.internal.Logging
+import org.apache.spark.{Partition, SparkEnv}
 
-object CachedPartitionedFilePreferredLocs extends Logging{
+object CachedPartitionedFilePreferredLocs {
 
   private var externalDBClient: ExternalDBClient = null
 
-  def getPreferredLocsByCache(files: Array[PartitionedFile]): Seq[String] = {
+  def getPreferredLocsByCache(split: Partition): Seq[String] = {
     if (null == externalDBClient) {
       externalDBClient = ExternalDBClientFactory.getDBClientInstance(SparkEnv.get)
     }
 
+    val files = split.asInstanceOf[FilePartition].files
     var preferredLocs = new ArrayBuffer[String]
 
     val hostToCachedBytes = mutable.HashMap.empty[String, Long]

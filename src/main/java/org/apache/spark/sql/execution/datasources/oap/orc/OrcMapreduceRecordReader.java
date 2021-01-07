@@ -23,7 +23,6 @@ import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.orc.*;
 import org.apache.orc.impl.DataReaderProperties;
@@ -32,6 +31,7 @@ import org.apache.orc.impl.RecordReaderBinaryCacheImpl;
 import org.apache.orc.impl.RecordReaderBinaryCacheUtils;
 import org.apache.orc.mapred.OrcMapredRecordReader;
 import org.apache.orc.mapred.OrcStruct;
+import org.apache.orc.storage.ql.exec.vector.VectorizedRowBatch;
 
 import org.apache.spark.sql.internal.oap.OapConf$;
 

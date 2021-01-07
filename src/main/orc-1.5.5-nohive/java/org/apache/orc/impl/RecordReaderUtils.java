@@ -26,14 +26,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.function.Supplier;
-
 import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.common.io.DiskRange;
-import org.apache.hadoop.hive.common.io.DiskRangeList;
+import org.apache.orc.storage.common.io.DiskRange;
+import org.apache.orc.storage.common.io.DiskRangeList;
 import org.apache.orc.CompressionCodec;
 import org.apache.orc.CompressionKind;
 import org.apache.orc.DataReader;
@@ -146,10 +144,10 @@ public class RecordReaderUtils {
   }
 
   protected static class DefaultDataReader implements DataReader {
-    protected FSDataInputStream file;
+    protected FSDataInputStream file = null;
     private ByteBufferAllocatorPool pool;
     private HadoopShims.ZeroCopyReaderShim zcr = null;
-    private final Supplier<FileSystem> fileSystemSupplier;
+    private final FileSystem fs;
     protected final Path path;
     private final boolean useZeroCopy;
     private CompressionCodec codec;
@@ -157,12 +155,10 @@ public class RecordReaderUtils {
     private final int typeCount;
     private CompressionKind compressionKind;
     private final int maxDiskRangeChunkLimit;
-    private boolean isOpen = false;
 
     protected DefaultDataReader(DataReaderProperties properties) {
-      this.fileSystemSupplier = properties.getFileSystemSupplier();
+      this.fs = properties.getFileSystem();
       this.path = properties.getPath();
-      this.file = properties.getFile();
       this.useZeroCopy = properties.getZeroCopy();
       this.compressionKind = properties.getCompression();
       this.codec = OrcCodecPool.getCodec(compressionKind);
@@ -173,9 +169,7 @@ public class RecordReaderUtils {
 
     @Override
     public void open() throws IOException {
-      if (file == null) {
-        this.file = fileSystemSupplier.get().open(path);
-      }
+      this.file = fs.open(path);
       if (useZeroCopy) {
         // ZCR only uses codec for boolean checks.
         pool = new ByteBufferAllocatorPool();
@@ -183,7 +177,6 @@ public class RecordReaderUtils {
       } else {
         zcr = null;
       }
-      isOpen = true;
     }
 
     @Override
@@ -198,7 +191,7 @@ public class RecordReaderUtils {
                                  OrcProto.Stream.Kind[] bloomFilterKinds,
                                  OrcProto.BloomFilterIndex[] bloomFilterIndices
                                  ) throws IOException {
-      if (!isOpen) {
+      if (file == null) {
         open();
       }
       if (footer == null) {
@@ -265,7 +258,7 @@ public class RecordReaderUtils {
 
     @Override
     public OrcProto.StripeFooter readStripeFooter(StripeInformation stripe) throws IOException {
-      if (!isOpen) {
+      if (file == null) {
         open();
       }
       long offset = stripe.getOffset() + stripe.getIndexLength() + stripe.getDataLength();
@@ -381,7 +374,7 @@ public class RecordReaderUtils {
       if (!includedRowGroups[group]) continue;
       int posn = getIndexPosition(
           encoding.getKind(), type.getKind(), stream.getKind(), isCompressed, hasNull);
-      long start = group == 0 ? 0 : index.getEntry(group).getPositions(posn);
+      long start = index.getEntry(group).getPositions(posn);
       final long nextGroupOffset;
       boolean isLast = group == (includedRowGroups.length - 1);
       nextGroupOffset = isLast ? length : index.getEntry(group + 1).getPositions(posn);

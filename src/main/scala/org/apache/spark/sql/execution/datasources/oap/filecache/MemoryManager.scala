@@ -58,7 +58,7 @@ case class MemoryBlockHolder(
                               length: Long,
                               occupiedSize: Long,
                               source: SourceEnum.SourceEnum,
-                              objectId: Array[Byte] = null,
+                              obejctId: Array[Byte] = null,
                               client: PlasmaClient = null)
 
 private[sql] abstract class MemoryManager {
@@ -118,7 +118,7 @@ private[sql] object MemoryManager extends Logging {
       case _ =>
         logInfo("current cache type may need further compatibility" +
           " check against backend cache strategy and memory manager. " +
-          "Please refer enabling-indexdata-cache-separation part in OAP-User-Guide.md.")
+          "Please refer enabling-indexdata-cache-separation part in User-Guide.md.")
     }
   }
 
@@ -470,7 +470,7 @@ private[filecache] class PlasmaMemoryManager(sparkEnv: SparkEnv)
   }
 
   override private[filecache] def free(block: MemoryBlockHolder): Unit = {
-    block.client.release(block.objectId)
+    block.client.release(block.obejctId)
   }
 
   override def memorySize: Long = 0
