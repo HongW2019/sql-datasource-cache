@@ -1,0 +1,16 @@
+site_name: SQL DS Cache
+
+nav:
+- User Guide: User-Guide.md
+- Advanced Configuration: Advanced-Configuration.md
+- Developer Guide: Developer-Guide.md
+
+repo_name: sql-ds-cache
+repo_url: https://github.com/oap-project/sql-ds-cache.git
+edit_uri: ""
+
+theme: readthedocs
+
+extra:
+    version: 1.0.0
+
